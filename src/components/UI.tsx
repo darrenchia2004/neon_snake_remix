@@ -47,7 +47,7 @@ export function UI() {
                       STREAK x{player.streak}
                     </div>
                     <div className="text-[10px] font-bold text-white/40 uppercase tracking-tighter">
-                      +{Math.round((Math.min(10, player.streak - 1) * 0.1) * 100)}% Bonus
+                      2X Points Active
                     </div>
                   </motion.div>
                 )}

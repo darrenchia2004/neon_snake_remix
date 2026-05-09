@@ -8,6 +8,7 @@ import { createServer as createViteServer } from 'vite';
 import { Server } from 'socket.io';
 import { createServer } from 'http';
 import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
 import {
   GameState,
   Player,
@@ -184,7 +185,11 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static('dist'));
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
   }
 
   httpServer.listen(PORT, '0.0.0.0', () => {

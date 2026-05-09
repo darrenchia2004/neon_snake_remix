@@ -129,15 +129,32 @@ function Snake({ playerId, color, isLocal }: { playerId: string, color: string, 
   );
 }
 
-function Orbs() {
+function Orbs({ highlightColor }: { highlightColor: string | null }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
+  const matRef = useRef<THREE.MeshStandardMaterial>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const colorObj = useMemo(() => new THREE.Color(), []);
+  const highlightColorObj = useMemo(() => new THREE.Color(), []);
 
-  useFrame(() => {
-    if (!meshRef.current) return;
+  useFrame((state) => {
+    if (!meshRef.current || !matRef.current) return;
     const gs = globalGameState.current;
     if (!gs) return;
+
+    // Pulse effect for highlighted orbs
+    const pulse = Math.sin(state.clock.elapsedTime * 6) * 0.5 + 0.5;
+    
+    const userData = matRef.current.userData;
+    if (userData.uHighlightColor && userData.uPulse) {
+      if (highlightColor) {
+        highlightColorObj.set(highlightColor);
+        userData.uHighlightColor.value.copy(highlightColorObj);
+        userData.uPulse.value = pulse;
+      } else {
+        userData.uHighlightColor.value.set(0, 0, 0);
+        userData.uPulse.value = 0;
+      }
+    }
 
     let i = 0;
     for (const orbId in gs.orbs) {
@@ -161,15 +178,28 @@ function Orbs() {
     <instancedMesh ref={meshRef} args={[null as any, null as any, 1000]} castShadow receiveShadow frustumCulled={false}>
       <sphereGeometry args={[0.5, 16, 16]} />
       <meshStandardMaterial
+        ref={matRef}
         roughness={0.4}
         metalness={0.1}
         toneMapped={false}
         onBeforeCompile={(shader) => {
-          shader.fragmentShader = shader.fragmentShader.replace(
+          shader.uniforms.uHighlightColor = { value: new THREE.Color(0, 0, 0) };
+          shader.uniforms.uPulse = { value: 0 };
+          matRef.current!.userData.uHighlightColor = shader.uniforms.uHighlightColor;
+          matRef.current!.userData.uPulse = shader.uniforms.uPulse;
+
+          shader.fragmentShader = `
+            uniform vec3 uHighlightColor;
+            uniform float uPulse;
+            ${shader.fragmentShader}
+          `.replace(
             '#include <emissivemap_fragment>',
             `
             #include <emissivemap_fragment>
-            totalEmissiveRadiance += diffuseColor.rgb * 2.5;
+            
+            float isMatch = distance(diffuseColor.rgb, uHighlightColor) < 0.1 ? 1.0 : 0.0;
+            float intensity = 2.5 + (isMatch * uPulse * 5.0);
+            totalEmissiveRadiance += diffuseColor.rgb * intensity;
             `
           );
         }}
@@ -248,6 +278,8 @@ function CollectionEffect({ x, y, color, onComplete }: { x: number, y: number, c
   );
 }
 
+  const [currentHighlight, setCurrentHighlight] = useState<string | null>(null);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') && !inputs.current.left) { inputs.current.left = true; }
@@ -292,6 +324,7 @@ function CollectionEffect({ x, y, color, onComplete }: { x: number, y: number, c
         localPlayerRef.current.lastOrbColor = serverPlayer.lastOrbColor || null;
         localPlayerRef.current.glow = serverPlayer.glow || 0;
         localPlayerRef.current.currentAngle = serverPlayer.currentAngle;
+        setCurrentHighlight(serverPlayer.lastOrbColor || null);
       }
 
       if (!localPlayerRef.current.active) return;
@@ -348,11 +381,12 @@ function CollectionEffect({ x, y, color, onComplete }: { x: number, y: number, c
           } else {
             localPlayerRef.current.streak = 1;
             localPlayerRef.current.lastOrbColor = orb.color;
+            setCurrentHighlight(orb.color);
           }
 
-          // Bonus: each streak level gives +10% bonus, max 100% bonus
-          const bonus = 1 + Math.min(10, localPlayerRef.current.streak - 1) * 0.1;
-          localPlayerRef.current.score += orb.value * bonus;
+          // Scoring logic: 2 points for streak > 1, 1 point otherwise
+          const pointsToAdd = localPlayerRef.current.streak > 1 ? 2 : 1;
+          localPlayerRef.current.score += pointsToAdd;
           
           localPlayerRef.current.glow = 1.0;
 
@@ -486,7 +520,7 @@ function CollectionEffect({ x, y, color, onComplete }: { x: number, y: number, c
         fadeStrength={1}
       />
 
-      <Orbs />
+      <Orbs highlightColor={currentHighlight} />
 
       {effects.map(effect => (
         <CollectionEffect
